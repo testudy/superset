@@ -238,7 +238,7 @@ playwright-run() {
 
   say "::group::Run Playwright tests"
   echo "Running Playwright with baseURL: ${PLAYWRIGHT_BASE_URL}"
-  npx playwright test auth/login --reporter=github --output=playwright-results
+  npx playwright test --reporter=github --output=playwright-results
   local status=$?
   say "::endgroup::"
 
