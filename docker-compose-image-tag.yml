@@ -28,7 +28,7 @@
 # docker compose -p superset -f docker-compose-image-tag.yml down
 # -----------------------------------------------------------------------
 
-x-superset-image: &superset-image apachesuperset.docker.scarf.sh/apache/superset:5.0.0
+x-superset-image: &superset-image apache/superset:5.0.0
 x-superset-volumes:
   &superset-volumes # /app/pythonpath_docker will be appended to the PYTHONPATH in the final container
   - ./docker:/app/docker
