@@ -24,7 +24,11 @@
 # For verbose logging during development:
 # - Set SUPERSET_LOG_LEVEL=debug in docker/.env-local for detailed Superset logs
 # -----------------------------------------------------------------------
-x-superset-image: &superset-image apachesuperset.docker.scarf.sh/apache/superset:${TAG:-latest-dev}
+# docker compose -p superset -f docker-compose-image-tag.yml up -d
+# docker compose -p superset -f docker-compose-image-tag.yml down
+# -----------------------------------------------------------------------
+
+x-superset-image: &superset-image apache/superset:5.0.0
 x-superset-volumes:
   &superset-volumes # /app/pythonpath_docker will be appended to the PYTHONPATH in the final container
   - ./docker:/app/docker
@@ -33,11 +37,31 @@ x-superset-volumes:
 
 services:
   redis:
-    image: redis:7
+    image: redis:7.0-alpine
     container_name: superset_cache
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:56379:6379"
+    # Persist Redis data (RDB/AOF depending on config)
     volumes:
-      - redis:/data
+      - redis_data:/data
+    networks:
+      - openmeter_net
+    command:
+      [
+        "redis-server",
+        "--maxmemory",
+        "512mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+        "--maxmemory-samples",
+        "10",
+      ]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   db:
     env_file:
@@ -45,12 +69,25 @@ services:
         required: true
       - path: docker/.env-local # optional override
         required: false
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: superset_db
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:55432:5432"
+    # Persist Postgres data
     volumes:
-      - db_home:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql/data
       - ./docker/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    networks:
+      openmeter_net:
+        aliases:
+          - superset_db
+    command: ["postgres", "-c", "wal_level=logical"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "${POSTGRES_DB}", "-U", "${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
   superset:
     env_file:
@@ -64,11 +101,13 @@ services:
     user: "root"
     restart: unless-stopped
     ports:
-      - 8088:8088
+      - 127.0.0.1:58088:8088
     depends_on:
       superset-init:
         condition: service_completed_successfully
     volumes: *superset-volumes
+    networks:
+      - openmeter_net
 
   superset-init:
     image: *superset-image
@@ -86,6 +125,8 @@ services:
         condition: service_started
     user: "root"
     volumes: *superset-volumes
+    networks:
+      - openmeter_net
     healthcheck:
       disable: true
 
@@ -104,6 +145,8 @@ services:
         condition: service_completed_successfully
     user: "root"
     volumes: *superset-volumes
+    networks:
+      - openmeter_net
     healthcheck:
       test:
         [
@@ -126,13 +169,23 @@ services:
         condition: service_completed_successfully
     user: "root"
     volumes: *superset-volumes
+    networks:
+      - openmeter_net
     healthcheck:
       disable: true
 
 volumes:
   superset_home:
     external: false
-  db_home:
+    name: superset_home
+  db_data:
     external: false
-  redis:
+    name: superset_db_data
+  redis_data:
     external: false
+    name: superset_redis_data
+
+networks:
+  openmeter_net:
+    external: true
+    name: openmeter_net
